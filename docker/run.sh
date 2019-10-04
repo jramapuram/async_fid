@@ -9,4 +9,4 @@ CMD=$1
 echo "executing $CMD "
 
 # execute it in docker
-nvidia-docker run -u $(id -u):$(id -g) --ipc=host -v $HOME/datasets:/datasets -v ${ROOT_DIR}:/workspace -it jramapuram/fid-tensorflow:1.14.0-gpu-py3 $CMD
+nvidia-docker run -p 8000:8000 -u $(id -u):$(id -g) --ipc=host -v $HOME/datasets:/datasets -v ${ROOT_DIR}:/workspace -it jramapuram/fid-tensorflow:1.14.0-gpu-py3 $CMD
