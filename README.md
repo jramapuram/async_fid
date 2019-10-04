@@ -34,6 +34,11 @@ To test the sync version run `python test_sync.py`, here are the results:
         FID for test-set vs. test-set : 0.27762879099949245
 ...
 
+[svhn_full]
+        FID for random data vs. test-set : 411.5628830393524.
+        FID for test-set vs. test-set : 4.3500883367190895
+...
+
 [svhn_centered]
         FID for random data vs. test-set : 393.96311903676656.
         FID for test-set vs. test-set : 9.076697602166995
@@ -59,7 +64,7 @@ To test the sync version run `python test_sync.py`, here are the results:
         FID for test-set vs. test-set : 1.2387706087668702
 ...
 
-[image_folder] # evaluating imagenet raw imgs
+[image_folder] # evaluating 32x32 imagenet raw imgs
         FID for random data vs. test-set : 425.07742193926936.
         FID for test-set vs. test-set : 5.2435325640107235
 ```

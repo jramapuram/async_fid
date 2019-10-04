@@ -1,6 +1,7 @@
 from __future__ import absolute_import, division, print_function
 
 import os
+import queue
 import dill
 import os.path, sys, tarfile
 import numpy as np
@@ -11,8 +12,9 @@ import urllib
 
 from time import sleep
 from scipy import linalg
+from functools import partial
 from six.moves import range, urllib
-from multiprocessing import Process, Queue
+from multiprocessing import Process, Queue, Event
 
 
 from dataset_loader import get_numpy_dataset
@@ -244,13 +246,14 @@ def fid(fake_images, real_images, root_folder, norm=True, sess=None):
 
 
 class SyncFID(object):
-    def __init__(self, dataset_str, root_folder, normalize=True):
+    def __init__(self, dataset_str, root_folder, normalize=True, force_cpu=False):
         """ Helper object that sync posts to a queue to compute the FID.
             A Lambda is posted to the call which is called with the fid_score value.
 
         :param dataset_str: the string dataset name
         :param root_folder: the location of the dataset
         :param normalize: normalize images or not?
+        :param force_cpu: force the session to be on the CPU
         :returns: FID object
         :rtype: object
 
@@ -263,7 +266,7 @@ class SyncFID(object):
         tf.reset_default_graph()
         inception_path = check_or_download_inception()
         create_inception_graph(inception_path)
-        self.sess = tf.Session()
+        self.sess = tf.Session(config=tf.ConfigProto(device_count={'GPU':0}) if force_cpu else tf.ConfigProto())
         self.sess.run(tf.global_variables_initializer())
 
     def _process(self, fake_images, pkld_lbda):
@@ -279,6 +282,19 @@ class SyncFID(object):
         lbda = dill.loads(pkld_lbda) # load the pickled lambda function
         lbda(fid_score)         # call de-dilled function
 
+    def post_to_visdom(self, fake_images, grapher, name, epoch):
+        """ Syntactic sugar to post to visdom.
+
+        :param fake_images: the generated images
+        :param grapher: the grapher object from helpers
+        :param name: the name of the feature
+        :param epoch: the current epoch
+        :returns: nothing, but enqueues a fid tabulation
+        :rtype: None
+
+        """
+        self.post(fake_images, lambda value: grapher.add_scalar(name, value, epoch))
+
     def post(self, fake_images, lbda):
         """ given a set of fake images and a lambda or fn that accepts the score compute FID
 
@@ -293,13 +309,14 @@ class SyncFID(object):
 
 
 class AsyncFID(object):
-    def __init__(self, dataset_str, root_folder, normalize=True):
+    def __init__(self, dataset_str, root_folder, normalize=True, force_cpu=False):
         """ Helper object that async posts to a queue to compute the FID.
             A Lambda is posted to the call which is called with the fid_score value.
 
         :param dataset_str: the string dataset name
         :param root_folder: the location of the dataset
         :param normalize: normalize images or not?
+        :param force_cpu: force the session to be on the CPU
         :returns: FID object
         :rtype: object
 
@@ -308,10 +325,32 @@ class AsyncFID(object):
         self.root_folder = root_folder
         _, self.test = get_numpy_dataset(dataset_str, root_folder)
 
+        # force the session to be on the CPU
+        self.session_conf = tf.ConfigProto(device_count={'GPU':0}) if force_cpu else tf.ConfigProto()
+
         # build a thread-safe queue and start an event loop
+        self.is_running = Event()
         self.q = Queue()
         self.event_loop = Process(target=self._loop, args=(self.q,))
         self.event_loop.start()
+
+    def join(self):
+        """ Blocks the calling process.
+
+        :returns: None
+        :rtype: None
+
+        """
+        self.event_loop.join()
+
+    def terminate(self):
+        """ Terminates the event loop.
+
+        :returns: None
+        :rtype: None
+
+        """
+        self.is_running.set()
 
     def _loop(self, q):
         """ Internal member to pop queue and compute FID
@@ -326,15 +365,40 @@ class AsyncFID(object):
         inception_path = check_or_download_inception()
         create_inception_graph(inception_path)
 
-        with tf.Session() as sess:
+        with tf.Session(config=self.session_conf) as sess:
             sess.run(tf.global_variables_initializer())
 
-            while True:
-                fake_images, pkld = q.get()
-                fid_score = fid(fake_images, self.test, self.root_folder,
-                                norm=self.normalize, sess=sess)
-                lbda = dill.loads(pkld) # load the pickled lambda function
-                lbda(fid_score)         # call de-dilled function
+            while not self.is_running.is_set():
+                fake_images, pkld = None, None
+
+                while not q.empty(): # process entire queue before exiting
+                    try: # block for 1 sec and catch the empty exception
+                        fake_images, pkld = q.get(block=True, timeout=1)
+                    except queue.Empty:
+                        continue
+
+                    # process the item popped (only if there was one popped)
+                    if fake_images is not None and pkld is not None:
+                        fid_score = fid(fake_images, self.test, self.root_folder,
+                                        norm=self.normalize, sess=sess)
+                        lbda = dill.loads(pkld) # load the pickled lambda function
+                        lbda(fid_score)         # call de-dilled function
+
+                sleep(1)
+
+
+    def post_to_visdom(self, fake_images, grapher, name, epoch):
+        """ Syntactic sugar to post to visdom.
+
+        :param fake_images: the generated images
+        :param grapher: the grapher object from helpers
+        :param name: the name of the feature
+        :param epoch: the current epoch
+        :returns: nothing, but enqueues a fid tabulation
+        :rtype: None
+
+        """
+        self.post(fake_images, lambda value: grapher.add_scalar(name, value, epoch))
 
     def post(self, fake_images, lbda):
         """ given a set of fake images and a lambda or fn that accepts the score compute FID
