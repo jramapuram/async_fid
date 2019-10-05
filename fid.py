@@ -269,18 +269,18 @@ class SyncFID(object):
         self.sess = tf.Session(config=tf.ConfigProto(device_count={'GPU':0}) if force_cpu else tf.ConfigProto())
         self.sess.run(tf.global_variables_initializer())
 
-    def _process(self, fake_images, pkld_lbda):
+    def _process(self, fake_images, lbda):
         """ Internal member to pop queue and compute FID
 
-        :param q: the shared thread safe queue
+        :param fake_images: the numpy fake images
+        :param lbda: the lambda function
         :returns: None, calls the internal lambda
         :rtype: None
 
         """
         fid_score = fid(fake_images, self.test, self.root_folder,
                         norm=self.normalize, sess=self.sess)
-        lbda = dill.loads(pkld_lbda) # load the pickled lambda function
-        lbda(fid_score)         # call de-dilled function
+        lbda(fid_score)  # call the lambda
 
     def post_to_visdom(self, fake_images, grapher, name, epoch):
         """ Syntactic sugar to post to visdom.
@@ -293,7 +293,10 @@ class SyncFID(object):
         :rtype: None
 
         """
-        self.post(fake_images, lambda value: grapher.add_scalar(name, value, epoch))
+        def _post_to_grapher(value):
+             grapher.add_scalar(name, value, epoch)
+
+        self.post(fake_images, _post_to_grapher)
 
     def post(self, fake_images, lbda):
         """ given a set of fake images and a lambda or fn that accepts the score compute FID
@@ -304,8 +307,7 @@ class SyncFID(object):
         :rtype: None
 
         """
-        pkld = dill.dumps(lbda) # dump to str the lambda
-        return self._process(fake_images, pkld)
+        return self._process(fake_images, lbda)
 
 
 class AsyncFID(object):
@@ -382,6 +384,7 @@ class AsyncFID(object):
                         fid_score = fid(fake_images, self.test, self.root_folder,
                                         norm=self.normalize, sess=sess)
                         lbda = dill.loads(pkld) # load the pickled lambda function
+                        # lbda = pkld
                         lbda(fid_score)         # call de-dilled function
 
                 sleep(1)
@@ -410,4 +413,5 @@ class AsyncFID(object):
 
         """
         pkld = dill.dumps(lbda) # dump to str the lambda
+        # pkld = lbda
         self.q.put((fake_images, pkld))

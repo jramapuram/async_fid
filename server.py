@@ -1,90 +1,110 @@
-#!/usr/bin/env python
-"""
-Very simple HTTP server in python (Updated for Python 3.7)
-Based of: https://gist.github.com/bradmontgomery/2219997
+#!/usr/bin/env python3
 
-Usage:
-    ./server.py -h
-    ./server.py -l localhost -p 8000
+import time
+import queue
+import rpyc
+rpyc.core.channel.Channel.COMPRESSION_LEVEL = 0
+rpyc.core.stream.SocketStream.MAX_IO_CHUNK = 65355*10
 
-Send a POST request:
-    curl -d "foo=bar&bin=baz" http://localhost:8000
-"""
-
-import dill
 import argparse
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from threading import Thread
+from multiprocessing import Event
 
 
-from fid import AsyncFID
+from fid import SyncFID
 
 
+class FIDService(rpyc.Service):
+    class FID(object):
+        def __init__(self, dataset_str, root_folder, normalize=True, force_cpu=False):
+            self.dataset_str = dataset_str
+            self.root_folder = root_folder
+            self.normalize = normalize
+            self.force_cpu = force_cpu
 
-class Server(BaseHTTPRequestHandler):
-    def _set_good_headers(self):
-        self.send_response(200)
-        self.send_header("Content-type", "text/html")
-        self.end_headers()
+            # build the central FID object
+            self.fid = SyncFID(dataset_str=self.dataset_str, root_folder=self.root_folder,
+                                   normalize=self.normalize, force_cpu=self.force_cpu)
 
-    def _set_fail_headers(self):
-        self.send_response(400)
-        self.send_header("Content-type", "text/html")
-        self.end_headers()
+            # hold the fake images / lambda
+            self.q = queue.Queue()
+            self.is_running = Event()
+            self.worker = Thread(target=self.work)
+            self.worker.start()
 
-    def do_HEAD(self):
-        self._set_headers()
+        def terminate(self):
+            """ Terminates the event loop.
 
-    def get_fid_object(self, dataset_str, root_folder, normalize=True, force_cpu=False):
-        if not hasattr(self, 'fid'):
-            self.fid = AsyncFID(dataset_str=dataset_str, root_folder=root_folder,
-                                normalize=normalize, force_cpu=force_cpu)
+            :returns: None
+            :rtype: None
 
-        # TODO: logic to add a new dataset
-        # self.fid.add_dataset(dataset_str, root_folder)
-        return self.fid
+            """
+            self.is_running.set()
 
-    def do_POST(self):
-        """ Accepts POST requests and un-dills them.
+        def _check_for_new_dataset(self, **kwargs):
+            """ Helper to add a test dataset to the FID object
 
-        :returns: response code
-        :rtype: None
+            :returns: Nothing, but adds the dataset
+            :rtype: None
 
-        """
-        content_length = int(self.headers['Content-Length'])
-        post_data = self.rfile.read(content_length)
-        post_data = dill.loads(post_data)
+            """
+            dataset_str = kwargs.get('dataset_str', None)
+            root_folder = kwargs.get('root_folder', self.dataset_str)
+            normalize = kwargs.get('normalize', self.normalize)
+            force_cpu = kwargs.get('force_cpu', self.force_cpu)
 
-        # sanity checks
-        for key in ['dataset_str', 'root_folder', 'fake_images', 'lambda']:
-            if key not in post_data:
-                print("{} is required for FID calculation, skipping POST".format(key))
-                self._set_fail_headers()
-                return
+            # if we detect a change add that dataset to the FID object
+            if dataset_str is not None and dataset_str != self.dataset_str:
+                self.fid.add_dataset(dataset_str=dataset_str, root_folder=root_folder,
+                                     normalize=normalize, force_cpu=force_cpu)
 
-        self._set_good_headers()
+        def work(self):
+            """ Internal worker.
 
-        # get the FID object
-        fid = self.get_fid_object(dataset_str=post_data['dataset_str'],
-                                  root_folder=post_data['root_folder'],
-                                  normalize=post_data.get('normalize', True),
-                                  force_cpu=post_data.get('force_cpu', False))
-        fid.post(fake_images=post_data['fake_images'],
-                 lbda=post_data['lambda'])
+            :returns: None
+            :rtype: None
+
+            """
+            while not self.is_running.is_set(): # flag to end worker
+                while not self.q.empty():       # process entire queue before exiting
+                    fake_images, lbda = None, None
+                    try: # block for 1 sec and catch the empty exception
+                        fake_images, lbda = self.q.get(block=True, timeout=1)
+                    except queue.Empty:
+                        continue
+
+                    if fake_images is not None and lbda is not None:
+                        async_lbda = rpyc.async_(lbda)
+                        self.fid.post(fake_images=rpyc.classic.obtain(fake_images),
+                                  lbda=async_lbda)
+
+                time.sleep(1)
+
+        def post(self, fake_images, lbda, **kwargs):
+            """ Posts a set of fake images with a lambda function to operate over FID score
+
+            :param fake_images: the set of numpy fake images
+            :param lbda: a lambda function taking 1 param as input
+            :returns: None
+            :rtype: None
+
+            """
+            # TODO: add a dataset if it isn't being monitored
+            # self._check_for_new_dataset(**kwargs)
+            self.q.put((fake_images, lbda))
 
 
-def run(server_class=HTTPServer, handler_class=Server, addr="localhost", port=8000):
-    server_address = (addr, port)
-    httpd = server_class(server_address, handler_class)
-
-    print(f"Starting httpd server on {addr}:{port}")
-    httpd.serve_forever()
+def run(port):
+    print("starting server on port {}...".format(port))
+    from rpyc.utils.server import ThreadedServer
+    cfg = {'allow_all_attrs': True, 'allow_pickle': True}
+    ThreadedServer(FIDService, port=port, protocol_config=cfg).start()
+    print("shutting down server on port {}...".format(port))
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run the FID HTTP server")
-    parser.add_argument("-l", "--listen", default="localhost",
-        help="Specify the IP address on which the server listens")
     parser.add_argument("-p", "--port", type=int, default=8000,
         help="Specify the port on which the server listens")
     args = parser.parse_args()
-    run(addr=args.listen, port=args.port)
+    run(port=args.port)
