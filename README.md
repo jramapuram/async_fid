@@ -1,12 +1,22 @@
 # async_fid
 
-Asynchronous & Synchronous(TF) FID calculation helpers.
+Asynchronous & Synchronous(TF) [FID](https://arxiv.org/abs/1706.08500) calculation helpers.
 This repo extends the code that was generously written by [1](https://github.com/daib13/TwoStageVAE/blob/master/fid_score.py) and [2](https://github.com/bioinf-jku/TTUR/blob/master/fid.py) while providing some nice extras & a cleaner interface.
 
 
+### PyRPC Client-Server Solution
+
+Posting messages to a remote FID-computing server is simple! See `tests/test_client_to_server.py` for an example.
+
+```bash
+# replace run_gpu.sh with run_cpu.sh for CPU workloads (not recommended).
+./docker/run_gpu.sh "python server.py"                                  # run on the server
+./docker/run_gpu.sh "python -m unittest tests/test_client_to_server.py" # run on client
+```
+
 ### Sync-Tests
 
-To test the sync version run `python test_sync.py`, here are the results:
+To test the sync version run `python -m unittest tests/test_sync.py`, here are the results:
 
 ``` bash
 [mnist]
@@ -71,4 +81,4 @@ To test the sync version run `python test_sync.py`, here are the results:
 
 ### Async-Tests
 
-Similarly run `python test_async.py` to test async solution.
+Similarly run `python -m unittest tests/test_async.py` to test async solution.
