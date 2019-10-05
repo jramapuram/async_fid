@@ -7,5 +7,5 @@ before_install:
   - docker pull jramapuram/fid-tensorflow:1.14.0-py3
 
 script:
-  - travis_wait 30 sh ./docker/run_cpu.sh "python -m unittest tests/test_async.py"
-  - travis_wait 30 sh ./docker/run_cpu.sh "python -m unittest tests/test_sync.py"
+  - travis_wait 120 sleep infinity & sh ./docker/run_cpu.sh "python -m unittest tests/test_async.py"
+  - travis_wait 120 sleep infinity & sh ./docker/run_cpu.sh "python -m unittest tests/test_sync.py"
