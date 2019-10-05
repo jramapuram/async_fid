@@ -12,7 +12,7 @@ def printer(x, test_number):
     num_successfully_posted += 1
 
 cfg = {'allow_pickle': True, "sync_request_timeout": 180}
-conn = rpyc.connect("neuralnetworkart.com", 8000, config=cfg)
+conn = rpyc.connect("localhost", 8000, config=cfg)
 bgsrv = rpyc.BgServingThread(conn)
 
 # create a FID object for MNIST

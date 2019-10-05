@@ -15,7 +15,7 @@ def async_test(task='mnist', data_dir='./mnist', force_cpu=False):
     :rtype: None
 
     """
-    from fid import AsyncFID as FID
+    from fid.fid import AsyncFID as FID
     f = FID(task, data_dir, force_cpu=force_cpu)
 
     f.post(rv, lambda s: print("\n[{}]\tFID for random data vs. test-set : {}.".format(task, s)))

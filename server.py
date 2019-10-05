@@ -11,7 +11,7 @@ from threading import Thread
 from multiprocessing import Event
 
 
-from fid import SyncFID
+from fid.fid import SyncFID
 
 
 class FIDService(rpyc.Service):

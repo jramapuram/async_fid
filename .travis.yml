@@ -1,0 +1,11 @@
+language: python
+
+services:
+  - docker
+
+before_install:
+  - docker pull jramapuram/fid-tensorflow:1.14.0-py3
+
+script:
+  - sh ./docker/run_cpu.sh "python -m unittest tests/test_async.py"
+  - sh ./docker/run_cpu.sh "python -m unittest tests/test_sync.py"

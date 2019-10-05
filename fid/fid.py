@@ -17,7 +17,7 @@ from six.moves import range, urllib
 from multiprocessing import Process, Queue, Event
 
 
-from dataset_loader import get_numpy_dataset
+from fid.dataset_loader import get_numpy_dataset
 
 
 def create_inception_graph(path):

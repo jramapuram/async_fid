@@ -13,7 +13,7 @@ def sync_test(task='mnist', data_dir='./mnist'):
     :rtype: None
 
     """
-    from fid import SyncFID as FID
+    from fid.fid import SyncFID as FID
     f = FID(task, data_dir)
     f.post(rv, lambda s: print("\n[{}]\n\tFID for random data vs. test-set : {}.".format(task, s)))
     f.post(f.test/255., lambda s: print("\tFID for test-set vs. test-set : {}\n".format(s)))
