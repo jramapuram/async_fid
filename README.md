@@ -1,18 +1,23 @@
 # async_fid
 
-Asynchronous, Synchronous and [RPC](https://rpyc.readthedocs.io/en/latest/index.html) (TF) [FID](https://arxiv.org/abs/1706.08500) calculation helpers. This repo extends the code that was generously written by [1](https://github.com/daib13/TwoStageVAE/blob/master/fid_score.py) and [2](https://github.com/bioinf-jku/TTUR/blob/master/fid.py) while providing some nice extras & a cleaner interface.
+Asynchronous, Synchronous and [RPC](https://rpyc.readthedocs.io/en/latest/index.html) (TF) [FID](https://arxiv.org/abs/1706.08500) calculation helpers. This repo extends the code that was generously written by [1](https://github.com/daib13/TwoStageVAE/blob/master/fid_score.py) and [2](https://github.com/bioinf-jku/TTUR/blob/master/fid.py) while providing some nice extras & a cleaner interface and the ability to **send your FID calculation to a remote server for calculation!**
 
+## Client-Server Solution
 
 ### PyRPC Server Setup
 
 The simplest way to get started is replace `<MY_HOST_DATASET_DIR>` to the place you want to store the datasets and and run the following command on the server (note datasets are mostly auto-downloaded, except for Imagenet / Celeb-A):
 
 ``` bash
-nvidia-docker run -p 8000:8000 -u $(id -u):$(id -g) --ipc=host -v <MY_HOST_DATASET_DIR>:/datasets -e NVIDIA_VISIBLE_DEVICES=2 -it jramapuram/fid-server-tensorflow:1.14.0-gpu-py3  # GPU version
+nvidia-docker run -p 8000:8000 -u $(id -u):$(id -g) \
+                               --ipc=host -v <MY_HOST_DATASET_DIR>:/datasets \
+                               -e NVIDIA_VISIBLE_DEVICES=0 \
+                               -it jramapuram/fid-server-tensorflow:1.14.0-gpu-py3  # GPU version
 
 # or if you want the CPU version:
-
-docker run -p 8000:8000 -u $(id -u):$(id -g) --ipc=host -v <MY_HOST_DATASET_DIR>:/datasets -it jramapuram/fid-server-tensorflow:1.14.0-py3  # CPU version
+docker run -p 8000:8000 -u $(id -u):$(id -g) \
+                        --ipc=host -v <MY_HOST_DATASET_DIR>:/datasets \
+                        -it jramapuram/fid-server-tensorflow:1.14.0-py3  # CPU version
 ```
 
 ### PyRPC Client Setup
@@ -24,6 +29,8 @@ Replace `<MY_HOST_IP_OR_NAME>` below and run:
 pip install rpyc
 python -m unittest tests/test_client_to_server.py --host <MY_HOST_IP_OR_NAME> --port 8000
 ```
+
+## Non Client-Server Solution
 
 ### Sync-Tests
 
