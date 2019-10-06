@@ -27,7 +27,7 @@ Replace `<MY_HOST_IP_OR_NAME>` below and run:
 
 ``` bash
 pip install rpyc
-python -m unittest tests/test_client_to_server.py --host <MY_HOST_IP_OR_NAME> --port 8000
+python tests/test_client_to_server.py --host <MY_HOST_IP_OR_NAME> --port 8000
 ```
 
 ## Non Client-Server Solution
