@@ -2,6 +2,8 @@
 
 Asynchronous, Synchronous and [RPC](https://rpyc.readthedocs.io/en/latest/index.html) (TF) [FID](https://arxiv.org/abs/1706.08500) calculation helpers. This repo extends the code that was generously written by [1](https://github.com/daib13/TwoStageVAE/blob/master/fid_score.py) and [2](https://github.com/bioinf-jku/TTUR/blob/master/fid.py) while providing some nice extras & a cleaner interface and the ability to **send your FID calculation to a remote server for calculation!**
 
+![](imgs/remote_fid.gif)
+
 ## Client-Server Solution
 
 ### PyRPC Server Setup
