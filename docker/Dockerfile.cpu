@@ -1,7 +1,7 @@
 FROM tensorflow/tensorflow:1.14.0-py3
 
 RUN pip3 install dill scipy==1.0.0 scikit-image scikit-learn pandas \
-        torchvision requests cffi joblib opencv-python pyvips tqdm
+        torchvision requests cffi joblib opencv-python pyvips tqdm rpyc
 RUN apt-get update && apt-get install -y libsm6 libxext6 libxrender-dev libvips libvips-dev zlib1g zlib1g-dev \
         && rm -rf /var/lib/apt/lists/*
 RUN CC="cc -mavx2" pip3 install -U --force-reinstall pillow-simd
