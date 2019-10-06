@@ -1,17 +1,28 @@
 # async_fid
 
-Asynchronous & Synchronous(TF) [FID](https://arxiv.org/abs/1706.08500) calculation helpers.
-This repo extends the code that was generously written by [1](https://github.com/daib13/TwoStageVAE/blob/master/fid_score.py) and [2](https://github.com/bioinf-jku/TTUR/blob/master/fid.py) while providing some nice extras & a cleaner interface.
+Asynchronous, Synchronous and [RPC](https://rpyc.readthedocs.io/en/latest/index.html) (TF) [FID](https://arxiv.org/abs/1706.08500) calculation helpers. This repo extends the code that was generously written by [1](https://github.com/daib13/TwoStageVAE/blob/master/fid_score.py) and [2](https://github.com/bioinf-jku/TTUR/blob/master/fid.py) while providing some nice extras & a cleaner interface.
 
 
-### PyRPC Client-Server Solution
+### PyRPC Server Setup
 
-Posting messages to a remote FID-computing server is simple! See `tests/test_client_to_server.py` for an example.
+The simplest way to get started is replace `<MY_HOST_DATASET_DIR>` to the place you want to store the datasets and and run the following command on the server (note datasets are mostly auto-downloaded, except for Imagenet / Celeb-A):
 
-```bash
-# replace run_gpu.sh with run_cpu.sh for CPU workloads (not recommended).
-./docker/run_gpu.sh "python server.py"                                  # run on the server
-./docker/run_gpu.sh "python -m unittest tests/test_client_to_server.py" # run on client
+``` bash
+nvidia-docker run -p 8000:8000 -u $(id -u):$(id -g) --ipc=host -v <MY_HOST_DATASET_DIR>:/datasets -e NVIDIA_VISIBLE_DEVICES=2 -it jramapuram/fid-server-tensorflow:1.14.0-gpu-py3  # GPU version
+
+# or if you want the CPU version:
+
+docker run -p 8000:8000 -u $(id -u):$(id -g) --ipc=host -v <MY_HOST_DATASET_DIR>:/datasets -it jramapuram/fid-server-tensorflow:1.14.0-py3  # CPU version
+```
+
+### PyRPC Client Setup
+
+Posting messages to a remote FID-computing server is simple! See `tests/test_client_to_server.py` for more details.
+Replace `<MY_HOST_IP_OR_NAME>` below and run:
+
+``` bash
+pip install rpyc
+python -m unittest tests/test_client_to_server.py --host <MY_HOST_IP_OR_NAME> --port 8000
 ```
 
 ### Sync-Tests
