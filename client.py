@@ -14,8 +14,8 @@ class FIDClient(object):
 
         """
         self.cfg = {'allow_pickle': True, "sync_request_timeout": 180}
-        self.conn = rpyc.connect(host, port, config=cfg)
-        self.bgsrv = rpyc.BgServingThread(conn)
+        self.conn = rpyc.connect(host, port, config=self.cfg)
+        self.bgsrv = rpyc.BgServingThread(self.conn)
         self.fid = self.conn.root.FID(normalize=normalize_imgs, force_cpu=force_cpu)
 
     def add_dataset(self, dataset_str, path):
