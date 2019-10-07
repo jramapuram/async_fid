@@ -23,12 +23,8 @@ def printer(x, test_number):
 
 
 def run(host, port, task='mnist', data_dir='./datasets/mnist'):
-    cfg = {'allow_pickle': True, "sync_request_timeout": 180}
-    conn = rpyc.connect(host, port, config=cfg)
-    bgsrv = rpyc.BgServingThread(conn)
-
-    # create a FID object for MNIST
-    fid = conn.root.FID(normalize=True, force_cpu=False)
+    from client import FIDClient
+    fid = FIDClient(host, port, normalize_imgs=True, force_cpu=False)
     fid.add_dataset(task, data_dir)
 
     # post some random data to it which will call-back printer here locally
@@ -42,7 +38,6 @@ def run(host, port, task='mnist', data_dir='./datasets/mnist'):
         time.sleep(1)
 
     print("test completed successfully!")
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="FID Client Test")
