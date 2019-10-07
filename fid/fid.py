@@ -14,7 +14,7 @@ from time import sleep
 from scipy import linalg
 from functools import partial
 from six.moves import range, urllib
-from multiprocessing import Process, Queue, Event
+from multiprocessing import Process, Queue, Event, Manager
 
 
 from fid.dataset_loader import get_numpy_dataset
@@ -203,13 +203,13 @@ def fid_read_dataset(fake_images, dataset, root_folder, norm=True):
     return fid(fake_images, real_images, root_folder, norm)
 
 
-def fid(fake_images, real_images, root_folder, norm=True, sess=None):
+def fid(fake_images, real_images, norm=True, sess=None):
     """ Compare fake_images to ones from test dataset.
 
     :param fake_images: the fake images (numpy)
     :param real_images: the real numpy images
-    :param root_folder: the folder for the dataset
     :param norm: whether to normalize or not
+    :param sess: the tensorflow session
     :returns: fid score
     :rtype: float32
 
@@ -246,21 +246,18 @@ def fid(fake_images, real_images, root_folder, norm=True, sess=None):
 
 
 class SyncFID(object):
-    def __init__(self, dataset_str, root_folder, normalize=True, force_cpu=False):
+    def __init__(self, normalize=True, force_cpu=False):
         """ Helper object that sync posts to a queue to compute the FID.
-            A Lambda is posted to the call which is called with the fid_score value.
 
-        :param dataset_str: the string dataset name
-        :param root_folder: the location of the dataset
         :param normalize: normalize images or not?
         :param force_cpu: force the session to be on the CPU
         :returns: FID object
         :rtype: object
 
         """
+        self.force_cpu = force_cpu
         self.normalize = normalize
-        self.root_folder = root_folder
-        _, self.test = get_numpy_dataset(dataset_str, root_folder)
+        self.test_dict = {}
 
         # setup TF and session
         tf.reset_default_graph()
@@ -269,54 +266,63 @@ class SyncFID(object):
         self.sess = tf.Session(config=tf.ConfigProto(device_count={'GPU':0}) if force_cpu else tf.ConfigProto())
         self.sess.run(tf.global_variables_initializer())
 
-    def _process(self, fake_images, lbda):
-        """ Internal member to pop queue and compute FID
+    def _process(self, fake_images, lbda, dataset_str):
+        """ Internal member to compute FID. Adds a dataset if needed.
 
         :param fake_images: the numpy fake images
         :param lbda: the lambda function
+        :param dataset_str: the name of the dataset
         :returns: None, calls the internal lambda
         :rtype: None
 
         """
-        fid_score = fid(fake_images, self.test, self.root_folder,
-                        norm=self.normalize, sess=self.sess)
-        lbda(fid_score)  # call the lambda
+        if dataset_str not in self.test_dict:
+            print("Error! {} not in test dictionary, add via add_dataset call.")
+            return
 
-    def post_to_visdom(self, fake_images, grapher, name, epoch):
-        """ Syntactic sugar to post to visdom.
+        # pick the right dataset
+        test_set = self.test_dict[dataset_str]
 
-        :param fake_images: the generated images
-        :param grapher: the grapher object from helpers
-        :param name: the name of the feature
-        :param epoch: the current epoch
-        :returns: nothing, but enqueues a fid tabulation
+        # compute the FID
+        fid_score = fid(fake_images, test_set,
+                        norm=self.normalize,
+                        sess=self.sess)
+
+        # call the lambda
+        lbda(fid_score)
+
+    def add_dataset(self, dataset_str, root_folder):
+        """ Adds the dataset to the test container
+
+        :param dataset_str: the name of the dataset
+        :param root_folder: where the dataset is stored or should be downloaded
+        :returns: nothing, but adds to member dict
         :rtype: None
 
         """
-        def _post_to_grapher(value):
-             grapher.add_scalar(name, value, epoch)
+        if dataset_str is not None and dataset_str not in self.test_dict:
+            _, test = get_numpy_dataset(dataset_str, root_folder)
+            self.test_dict[dataset_str] = test
 
-        self.post(fake_images, _post_to_grapher)
+        return self.test_dict[dataset_str]
 
-    def post(self, fake_images, lbda):
+    def post(self, fake_images, lbda, dataset_str):
         """ given a set of fake images and a lambda or fn that accepts the score compute FID
 
         :param fake_images: fake images, TODO: this should be 10k I believe
         :param lbda: any lambda or fn that accepts the fid score as ONLY param
+        :param dataset_str: specify which dataset's test set to use
         :returns: nothing, just calls the lambda on the fid score
         :rtype: None
 
         """
-        return self._process(fake_images, lbda)
+        return self._process(fake_images, lbda, dataset_str=dataset_str)
 
 
 class AsyncFID(object):
-    def __init__(self, dataset_str, root_folder, normalize=True, force_cpu=False):
+    def __init__(self, normalize=True, force_cpu=False):
         """ Helper object that async posts to a queue to compute the FID.
-            A Lambda is posted to the call which is called with the fid_score value.
 
-        :param dataset_str: the string dataset name
-        :param root_folder: the location of the dataset
         :param normalize: normalize images or not?
         :param force_cpu: force the session to be on the CPU
         :returns: FID object
@@ -324,8 +330,9 @@ class AsyncFID(object):
 
         """
         self.normalize = normalize
-        self.root_folder = root_folder
-        _, self.test = get_numpy_dataset(dataset_str, root_folder)
+        self.force_cpu = force_cpu
+        self.manager = Manager()
+        self.test_dict = self.manager.dict() # house all the test datasets
 
         # force the session to be on the CPU
         self.session_conf = tf.ConfigProto(device_count={'GPU':0}) if force_cpu else tf.ConfigProto()
@@ -354,6 +361,21 @@ class AsyncFID(object):
         """
         self.is_running.set()
 
+    def add_dataset(self, dataset_str, root_folder):
+        """ Adds the dataset to the test container
+
+        :param dataset_str: the name of the dataset
+        :param root_folder: where the dataset is stored or should be downloaded
+        :returns: nothing, but adds to member dict
+        :rtype: None
+
+        """
+        if dataset_str is not None and dataset_str not in self.test_dict:
+            _, test = get_numpy_dataset(dataset_str, root_folder)
+            self.test_dict[dataset_str] = test
+
+        return self.test_dict[dataset_str]
+
     def _loop(self, q):
         """ Internal member to pop queue and compute FID
 
@@ -371,47 +393,41 @@ class AsyncFID(object):
             sess.run(tf.global_variables_initializer())
 
             while not self.is_running.is_set():
-                fake_images, pkld = None, None
+                fake_images, pkld, dataset_str = None, None, None
 
                 while not q.empty(): # process entire queue before exiting
                     try: # block for 1 sec and catch the empty exception
-                        fake_images, pkld = q.get(block=True, timeout=1)
+                        fake_images, pkld, dataset_str = q.get(block=True, timeout=1)
                     except queue.Empty:
                         continue
 
                     # process the item popped (only if there was one popped)
-                    if fake_images is not None and pkld is not None:
-                        fid_score = fid(fake_images, self.test, self.root_folder,
-                                        norm=self.normalize, sess=sess)
-                        lbda = dill.loads(pkld) # load the pickled lambda function
-                        # lbda = pkld
-                        lbda(fid_score)         # call de-dilled function
+                    if fake_images is not None and pkld is not None and dataset_str is not None:
+                        if dataset_str not in self.test_dict:
+                            print("Error! {} not in test dictionary, add via add_dataset call.".format(dataset_str))
+                        else:
+                            # pick the right dataset and compute the FID
+                            test_set = self.test_dict[dataset_str]
+                            fid_score = fid(fake_images, test_set,
+                                            norm=self.normalize,
+                                            sess=sess)
+
+                            # load the pickled lambda function and execute
+                            lbda = dill.loads(pkld)
+                            lbda(fid_score)
 
                 sleep(1)
 
-
-    def post_to_visdom(self, fake_images, grapher, name, epoch):
-        """ Syntactic sugar to post to visdom.
-
-        :param fake_images: the generated images
-        :param grapher: the grapher object from helpers
-        :param name: the name of the feature
-        :param epoch: the current epoch
-        :returns: nothing, but enqueues a fid tabulation
-        :rtype: None
-
-        """
-        self.post(fake_images, lambda value: grapher.add_scalar(name, value, epoch))
-
-    def post(self, fake_images, lbda):
+    def post(self, fake_images, lbda, dataset_str):
         """ given a set of fake images and a lambda or fn that accepts the score compute FID
 
         :param fake_images: fake images, TODO: this should be 10k I believe
         :param lbda: any lambda or fn that accepts the fid score as ONLY param
+        :param dataset_str: the str name of the dataset
         :returns: nothing, just calls the lambda on the fid score
         :rtype: None
 
         """
-        pkld = dill.dumps(lbda) # dump to str the lambda
-        # pkld = lbda
-        self.q.put((fake_images, pkld))
+        self.q.put((fake_images,
+                    dill.dumps(lbda),
+                    dataset_str))

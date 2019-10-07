@@ -5,7 +5,7 @@ import numpy as np
 from functools import partial
 
 num_successfully_posted = 0
-max_tests = 2
+max_tests = 200
 
 
 def printer(x, test_number):
@@ -22,18 +22,19 @@ def printer(x, test_number):
     num_successfully_posted += 1 # also increment a glocal variable to this thread!
 
 
-def run(host, port):
+def run(host, port, task='mnist', data_dir='./datasets/mnist'):
     cfg = {'allow_pickle': True, "sync_request_timeout": 180}
     conn = rpyc.connect(host, port, config=cfg)
     bgsrv = rpyc.BgServingThread(conn)
 
     # create a FID object for MNIST
-    fid = conn.root.FID('mnist', '/datasets/mnist', True, False)
+    fid = conn.root.FID(normalize=True, force_cpu=False)
+    fid.add_dataset(task, data_dir)
 
     # post some random data to it which will call-back printer here locally
     for i in range(max_tests):
         print_i = partial(printer, test_number=i)
-        fid.post(np.random.rand(10000, 28, 28, 1), print_i)
+        fid.post(np.random.rand(10000, 28, 28, 1), print_i, dataset_str=task)
         print("successfully posted data {}, awaiting response...".format(i))
 
     # note that we could be continuing execution with our training/test loop here!
@@ -49,6 +50,10 @@ if __name__ == "__main__":
         help="Specify the host server endpoint")
     parser.add_argument("-p", "--port", type=int, default=8000,
         help="Specify the port on which the server listens")
+    parser.add_argument("-d", "--dataset", type=str, default='mnist',
+        help="what dataset to use")
+    parser.add_argument("--dataset-dir", type=str, default='./mnist',
+        help="location of the dataset")
 
     args = parser.parse_args()
-    run(host=args.host, port=args.port)
+    run(host=args.host, port=args.port, task=args.dataset, data_dir=args.dataset_dir)
