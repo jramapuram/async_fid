@@ -24,13 +24,26 @@ docker run -p 8000:8000 -u $(id -u):$(id -g) \
 
 ### PyRPC Client Setup
 
-Posting messages to a remote FID-computing server is simple! See `tests/test_client_to_server.py` for more details.
-Replace `<MY_HOST_IP_OR_NAME>` below and run:
+Posting messages to a remote FID-computing server is simple!  
 
-``` bash
-pip install rpyc
-python tests/test_client_to_server.py --host <MY_HOST_IP_OR_NAME> --port 8000
+``` python
+from client import FIDClient
+
+# be sure to fill out host & port below with your server's IP / hostname
+fid = FIDClient(host, port, normalize_imgs=True, force_cpu=False)
+fid.add_dataset(task='mnist', data_dir='./datasets/mnist') # add a dataset
+
+def do_something_with_fid(fid_value):
+  # save to disk? post to tensorboard / visdom
+  # treat fid_value as a simple python float
+
+# calculate fid for random data, this function instantly returns so you can continue training :D
+# do_something_with_fid is triggered from the remote when it is completed and is run asynchronously here.
+fid.post(fake_images=np.random.rand(10000, 28, 28, 1), 
+         do_something_with_fid, dataset_str='mnist')
 ```
+
+(See `tests/test_client_to_server.py` for an end-to-end example.)
 
 ## Non Client-Server Solution
 
