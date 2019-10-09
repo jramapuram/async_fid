@@ -36,7 +36,7 @@ python tests/test_client_to_server.py --host <MY_HOST_IP_OR_NAME> --port 8000
 
 ### Sync-Tests
 
-To test the sync version run `python -m unittest tests/test_sync.py`, here are the results:
+To test the sync version run `python -m unittest tests/test_sync.py` (or `./docker/run.sh "python -m unittest tests/test_sync.py"` to use the pre-baked container), here are the results for some typical datasets:
 
 ``` bash
 [mnist]
@@ -101,4 +101,8 @@ To test the sync version run `python -m unittest tests/test_sync.py`, here are t
 
 ### Async-Tests
 
-Similarly run `python -m unittest tests/test_async.py` to test async solution.
+Similarly to the sync solution run :
+```bash
+mv tests/test_async.py . # python -m unittest throws an error due to pickling lambdas for multiprocess stuff.
+python test_async.py # (or ./docker/run.sh python test_async.py)
+```
