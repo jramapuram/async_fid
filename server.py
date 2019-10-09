@@ -18,15 +18,13 @@ class FIDService(rpyc.Service):
     class FID(object):
 
         class __FID(object):
-            def __init__(self, dataset_str, root_folder, normalize=True, force_cpu=False):
-                self.dataset_str = dataset_str
-                self.root_folder = root_folder
+            def __init__(self, normalize=True, force_cpu=False):
                 self.normalize = normalize
                 self.force_cpu = force_cpu
 
                 # build the central FID object
-                self.fid = SyncFID(dataset_str=self.dataset_str, root_folder=self.root_folder,
-                                       normalize=self.normalize, force_cpu=self.force_cpu)
+                self.fid = SyncFID(normalize=self.normalize,
+                                   force_cpu=self.force_cpu)
 
                 # hold the fake images / lambda
                 self.q = queue.Queue()
@@ -43,22 +41,16 @@ class FIDService(rpyc.Service):
                 """
                 self.is_running.set()
 
-            def _check_for_new_dataset(self, **kwargs):
-                """ Helper to add a test dataset to the FID object
+            def add_dataset(self, dataset_str, root_folder):
+                """ Helper to add a test dataset to the FID object.
 
-                :returns: Nothing, but adds the dataset
+                :param dataset_str: name (str) of the dataset
+                :param root_folder: where it is stored
+                :returns: nothing, but adds the dataset
                 :rtype: None
 
                 """
-                dataset_str = kwargs.get('dataset_str', None)
-                root_folder = kwargs.get('root_folder', self.dataset_str)
-                normalize = kwargs.get('normalize', self.normalize)
-                force_cpu = kwargs.get('force_cpu', self.force_cpu)
-
-                # if we detect a change add that dataset to the FID object
-                if dataset_str is not None and dataset_str != self.dataset_str:
-                    self.fid.add_dataset(dataset_str=dataset_str, root_folder=root_folder,
-                                         normalize=normalize, force_cpu=force_cpu)
+                self.fid.add_dataset(dataset_str, root_folder)
 
             def work(self):
                 """ Internal worker.
@@ -69,45 +61,39 @@ class FIDService(rpyc.Service):
                 """
                 while not self.is_running.is_set(): # flag to end worker
                     while not self.q.empty():       # process entire queue before exiting
-                        fake_images, lbda = None, None
+                        fake_images, lbda, dataset_str = None, None, None
                         try: # block for 1 sec and catch the empty exception
-                            fake_images, lbda = self.q.get(block=True, timeout=1)
+                            fake_images, lbda, dataset_str = self.q.get(block=True, timeout=1)
                         except queue.Empty:
                             continue
 
-                        if fake_images is not None and lbda is not None:
+                        if fake_images is not None and lbda is not None and dataset_str is not None:
                             async_lbda = rpyc.async_(lbda)
                             self.fid.post(fake_images=rpyc.classic.obtain(fake_images),
-                                      lbda=async_lbda)
+                                          lbda=async_lbda, dataset_str=dataset_str)
 
                     time.sleep(1)
 
-            def post(self, fake_images, lbda, **kwargs):
+            def post(self, fake_images, lbda, dataset_str):
                 """ Posts a set of fake images with a lambda function to operate over FID score
 
                 :param fake_images: the set of numpy fake images
                 :param lbda: a lambda function taking 1 param as input
+                :param dataset_str: the str name of the dataset
                 :returns: None
                 :rtype: None
 
                 """
-                # TODO: add a dataset if it isn't being monitored
-                # self._check_for_new_dataset(**kwargs)
-                self.q.put((fake_images, lbda))
+                self.q.put((fake_images, lbda, dataset_str))       # pushes stuff to the queue
 
         # Singleton to return only one instance
         instance = None
 
-        def __init__(self, dataset_str, root_folder, normalize=True, force_cpu=False):
+        def __init__(self, normalize=True, force_cpu=False):
             if not FIDService.FID.instance:
                 FIDService.FID.instance = FIDService.FID.__FID(
-                    dataset_str, root_folder, normalize=True, force_cpu=False
+                    normalize=normalize, force_cpu=force_cpu
                 )
-            # else:
-            #     FID.instance._check_for_new_dataset(dataset_str=dataset_str,
-            #                                         root_folder=root_folder,
-            #                                         normalize=True,
-            #                                         force_cpu=False)
 
         def __getattr__(self, name):
             return getattr(self.instance, name)
