@@ -15,22 +15,13 @@ def async_test(f, task='mnist'):
     :rtype: None
 
     """
-    # f.post(fake_images=rv,
-    #        lbda=lambda s: print("\n[{}]\tFID for random data vs. test-set : {}.".format(task, s)),
-    #        dataset_str=task
-    # )
-    # print('posted async item!')
-
-    f.post_with_images(fake_images=f.test_dict[task]/255.,
-                       real_images=f.test_dict[task],
-                       lbda=lambda s: print("\n[{}]\tFID for test-set vs. test-set : {}\n".format(task, s)))
+    f.post(fake_images=rv,
+           lbda=lambda s: print("\n[{}]\tFID for random data vs. test-set : {}.".format(task, s)),
+           dataset_str=task
+    )
     print('posted async item!')
 
-    f.post_with_images(fake_images=f.test_dict[task],
-                       real_images=f.test_dict[task]/255.,
-                       lbda=lambda s: print("\n[{}]\tFID for test-set vs. test-set : {}\n".format(task, s)))
-    print('posted async item!')
-
+    # post your own data as well directly, FID internally auto-rescales to 255
     f.post_with_images(fake_images=f.test_dict[task],
                        real_images=f.test_dict[task],
                        lbda=lambda s: print("\n[{}]\tFID for test-set vs. test-set : {}\n".format(task, s)))
