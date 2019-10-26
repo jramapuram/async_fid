@@ -31,7 +31,7 @@ from client import FIDClient
 
 # be sure to fill out host & port below with your server's IP / hostname
 fid = FIDClient(host, port, normalize_imgs=True, force_cpu=False)
-fid.add_dataset(task='mnist', data_dir='./datasets/mnist') # add a dataset
+fid.add_dataset(task='mnist', data_dir='./datasets/mnist') # add a dataset (mostly auto-downloads)
 
 def do_something_with_fid(fid_value):
   # save to disk? post to tensorboard / visdom
@@ -41,6 +41,11 @@ def do_something_with_fid(fid_value):
 # do_something_with_fid is triggered from the remote when it is completed and is run asynchronously here.
 fid.post(fake_images=np.random.rand(10000, 28, 28, 1), 
          do_something_with_fid, dataset_str='mnist')
+         
+# instead of using the full MNIST dataset like above post your own test images
+fid.post_with_images(fake_images=np.random.rand(10000, 28, 28, 1), 
+                     real_images=np.random.rand(10000, 28, 28, 1), 
+                     do_something_with_fid)
 ```
 
 (See `tests/test_client_to_server.py` for an end-to-end example.)
