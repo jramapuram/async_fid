@@ -217,15 +217,27 @@ def fid(fake_images, real_images, norm=True, sess=None):
     # sanity checks to not compute fid on erroneous data
     assert isinstance(fake_images, np.ndarray) and isinstance(real_images, np.ndarray), \
         print('need np arrays, got fake = ', type(fake_images), " | real = ", type(real_images))
-    assert fake_images.min() >= 0 and fake_images.max() <= 1.0, \
-        "fake images need to be in [0, 1] range."
-    assert real_images.min() >= 0 and real_images.max() <= 255.0 and np.sum(real_images > 1) >= 1, \
-        "real images need to be in [0, 255] range."
+    # assert fake_images.min() >= 0 and fake_images.max() <= 1.0, \
+    #     "fake images need to be in [0, 1] range."
+    # assert real_images.min() >= 0 and real_images.max() <= 255.0 and np.sum(real_images > 1) >= 1, \
+    #     "real images need to be in [0, 255] range."
 
     np.random.shuffle(real_images)
+    np.random.shuffle(fake_images)
     real_images = real_images[0:10000]
-    real_images = preprocess_real_images(real_images)
-    fake_images = preprocess_fake_images(fake_images, norm)
+    fake_images = fake_images[0:10000]
+
+    # scale real images appropriately
+    if not np.sum(real_images > 1) >= 1:
+        real_images = preprocess_fake_images(real_images, norm)
+    else:
+        real_images = preprocess_real_images(real_images)
+
+    # scale fake images appropriately
+    if not np.sum(fake_images > 1) >= 1:
+        fake_images = preprocess_fake_images(fake_images, norm)
+    else:
+        fake_images = preprocess_real_images(fake_images)
 
     if sess is None: # download inception if it doesnt exist
         inception_path = check_or_download_inception()
@@ -266,30 +278,24 @@ class SyncFID(object):
         self.sess = tf.Session(config=tf.ConfigProto(device_count={'GPU':0}) if force_cpu else tf.ConfigProto())
         self.sess.run(tf.global_variables_initializer())
 
-    def _process(self, fake_images, lbda, dataset_str):
+    def _process(self, fake_images, real_images, lbda):
         """ Internal member to compute FID. Adds a dataset if needed.
 
         :param fake_images: the numpy fake images
+        :param real_images: the real images to compare against
         :param lbda: the lambda function
-        :param dataset_str: the name of the dataset
         :returns: None, calls the internal lambda
         :rtype: None
 
         """
-        if dataset_str not in self.test_dict:
-            print("Error! {} not in test dictionary, add via add_dataset call.")
-            return
-
-        # pick the right dataset
-        test_set = self.test_dict[dataset_str]
-
         # compute the FID
-        fid_score = fid(fake_images, test_set,
+        fid_score = fid(fake_images, real_images,
                         norm=self.normalize,
                         sess=self.sess)
 
-        # call the lambda
+        # call the lambda & return
         lbda(fid_score)
+        return fid_score
 
     def add_dataset(self, dataset_str, root_folder):
         """ Adds the dataset to the test container
@@ -306,6 +312,18 @@ class SyncFID(object):
 
         return self.test_dict[dataset_str]
 
+    def post_with_images(self, fake_images, real_images, lbda):
+        """ given a set of fake +real images and a lambda or fn that accepts the score compute FID
+
+        :param fake_images: fake images, TODO: this should be 10k I believe
+        :param real_images: the true images
+        :param lbda: any lambda or fn that accepts the fid score as ONLY param
+        :returns: nothing, just calls the lambda on the fid score
+        :rtype: None
+
+        """
+        return self._process(fake_images, real_images, lbda)
+
     def post(self, fake_images, lbda, dataset_str):
         """ given a set of fake images and a lambda or fn that accepts the score compute FID
 
@@ -316,7 +334,12 @@ class SyncFID(object):
         :rtype: None
 
         """
-        return self._process(fake_images, lbda, dataset_str=dataset_str)
+        if dataset_str not in self.test_dict:
+            print("Error! {} not in test dictionary, add via add_dataset call.")
+            return
+
+        real_images = self.test_dict[dataset_str] # grab test set
+        return self._process(fake_images, real_images, lbda)
 
 
 class AsyncFID(object):
@@ -397,26 +420,55 @@ class AsyncFID(object):
 
                 while not q.empty(): # process entire queue before exiting
                     try: # block for 1 sec and catch the empty exception
-                        fake_images, pkld, dataset_str = q.get(block=True, timeout=1)
+                        q_item = q.get(block=True, timeout=1)
+                        fake_images = q_item['fake_images']
+                        pkld = q_item['lbda']
+                        dataset_str = q_item.get('dataset_str', None)
+                        if dataset_str is not None and dataset_str not in self.test_dict:
+                            print("Error! {} not in test dictionary, add via add_dataset call.".format(dataset_str))
+                            continue
+
+                        # grab the real images from the queue or the cached test set
+                        real_images = q_item['real_images'] if 'real_images' in q_item \
+                            else self.test_dict[dataset_str]
+
                     except queue.Empty:
                         continue
 
                     # process the item popped (only if there was one popped)
-                    if fake_images is not None and pkld is not None and dataset_str is not None:
-                        if dataset_str not in self.test_dict:
-                            print("Error! {} not in test dictionary, add via add_dataset call.".format(dataset_str))
-                        else:
-                            # pick the right dataset and compute the FID
-                            test_set = self.test_dict[dataset_str]
-                            fid_score = fid(fake_images, test_set,
-                                            norm=self.normalize,
-                                            sess=sess)
+                    if fake_images is not None and pkld is not None and real_images is not None:
+                        # compute the FID
+                        fid_score = fid(fake_images, real_images,
+                                        norm=self.normalize,
+                                        sess=sess)
 
-                            # load the pickled lambda function and execute
-                            lbda = dill.loads(pkld)
-                            lbda(fid_score)
+                        # load the pickled lambda function and execute
+                        lbda = dill.loads(pkld)
+                        lbda(fid_score)
 
                 sleep(1)
+
+    def post_with_images(self, fake_images, real_images, lbda):
+        """ given a set of fake + real images and a lambda or fn that accepts the score compute FID
+
+        :param fake_images: fake images, TODO: this should be 10k I believe
+        :param real_images: the true images to compare against
+        :param lbda: any lambda or fn that accepts the fid score as ONLY param
+        :returns: nothing, just calls the lambda on the fid score
+        :rtype: None
+
+        """
+        if fake_images.shape[0] != real_images.shape[0]:
+            print("currently only supports equivalent true and fake images, got {} true and {} fake".format(
+                real_images.shape, fake_images.shape))
+            return
+
+        q_item = {
+            'fake_images': fake_images,
+            'real_images': real_images,
+            'lbda': dill.dumps(lbda),
+        }
+        self.q.put(q_item)
 
     def post(self, fake_images, lbda, dataset_str):
         """ given a set of fake images and a lambda or fn that accepts the score compute FID
@@ -428,6 +480,9 @@ class AsyncFID(object):
         :rtype: None
 
         """
-        self.q.put((fake_images,
-                    dill.dumps(lbda),
-                    dataset_str))
+        q_item = {
+            'fake_images': fake_images,
+            'dataset_str': dataset_str,
+            'lbda': dill.dumps(lbda),
+        }
+        self.q.put(q_item)

@@ -5,7 +5,7 @@ import numpy as np
 from functools import partial
 
 num_successfully_posted = 0
-max_tests = 200
+max_tests = 2
 
 
 def printer(x, test_number):
@@ -33,8 +33,14 @@ def run(host, port, task='mnist', data_dir='./datasets/mnist'):
         fid.post(np.random.rand(10000, 28, 28, 1), print_i, dataset_str=task)
         print("successfully posted data {}, awaiting response...".format(i))
 
+        # post with your own test images
+        fid.post_with_images(np.random.rand(10000, 28, 28, 1),
+                             np.random.rand(10000, 28, 28, 1),
+                             print_i)
+        print("successfully posted data {} with images, awaiting response...".format(i))
+
     # note that we could be continuing execution with our training/test loop here!
-    while num_successfully_posted < max_tests:
+    while num_successfully_posted < max_tests*2:
         time.sleep(1)
 
     print("test completed successfully!")

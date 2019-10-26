@@ -14,13 +14,23 @@ def sync_test(task='mnist'):
 
     """
     # post two sync-tasks, one with RND data and one with real test data
-    f.post(fake_images=rv,
-           lbda=lambda s: print("\n[{}]\n\tFID for random data vs. test-set : {}.".format(task, s)),
-           dataset_str=task
+    # f.post(fake_images=rv,
+    #        lbda=lambda s: print("\n[{}]\n\tFID for random data vs. test-set : {}.".format(task, s)),
+    #        dataset_str=task
+    # )
+    f.post_with_images(fake_images=f.test_dict[task]/255.,
+                       real_images=f.test_dict[task],
+                       lbda=lambda s: print("\tFID for test-set vs. test-set : {}\n".format(s))
     )
-    f.post(fake_images=f.test_dict[task]/255.,
-           lbda=lambda s: print("\tFID for test-set vs. test-set : {}\n".format(s)),
-           dataset_str=task
+
+    f.post_with_images(fake_images=f.test_dict[task],
+                       real_images=f.test_dict[task]/255.,
+                       lbda=lambda s: print("\tFID for test-set vs. test-set : {}\n".format(s))
+    )
+
+    f.post_with_images(fake_images=f.test_dict[task],
+                       real_images=f.test_dict[task],
+                       lbda=lambda s: print("\tFID for test-set vs. test-set : {}\n".format(s))
     )
 
 # build the sync-fid object

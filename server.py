@@ -63,16 +63,53 @@ class FIDService(rpyc.Service):
                     while not self.q.empty():       # process entire queue before exiting
                         fake_images, lbda, dataset_str = None, None, None
                         try: # block for 1 sec and catch the empty exception
-                            fake_images, lbda, dataset_str = self.q.get(block=True, timeout=1)
+                            q_item = self.q.get(block=True, timeout=1)
+                            fake_images = q_item['fake_images']
+                            lbda = q_item['lbda']
+                            dataset_str = q_item.get('dataset_str', None)
+                            real_images = q_item.get('real_images', None)
+
                         except queue.Empty:
                             continue
 
-                        if fake_images is not None and lbda is not None and dataset_str is not None:
+                        if fake_images is not None and lbda is not None:
                             async_lbda = rpyc.async_(lbda)
-                            self.fid.post(fake_images=rpyc.classic.obtain(fake_images),
-                                          lbda=async_lbda, dataset_str=dataset_str)
+                            if dataset_str is not None:
+                                # images not provided, use test set
+                                try:
+                                    self.fid.post(fake_images=rpyc.classic.obtain(fake_images),
+                                                  lbda=async_lbda, dataset_str=dataset_str)
+                                except EOFError:
+                                    print("caught client disconnection error...")
+                                    continue
+                            else:
+                                # images provided
+                                try:
+                                    self.fid.post_with_images(fake_images=rpyc.classic.obtain(fake_images),
+                                                              real_images=rpyc.classic.obtain(real_images),
+                                                              lbda=async_lbda)
+                                except EOFError:
+                                    print("caught client disconnection error...")
+                                    continue
 
                     time.sleep(1)
+
+            def post_with_images(self, fake_images, real_images, lbda):
+                """ Posts a set of fake + real images with a lambda function to operate over FID score
+
+                :param fake_images: the set of numpy fake images
+                :param real_images: the true images
+                :param lbda: a lambda function taking 1 param as input
+                :returns: None
+                :rtype: None
+
+                """
+                q_item = {
+                    'fake_images': fake_images,
+                    'real_images': real_images,
+                    'lbda': lbda,
+                }
+                self.q.put(q_item)
 
             def post(self, fake_images, lbda, dataset_str):
                 """ Posts a set of fake images with a lambda function to operate over FID score
@@ -84,7 +121,12 @@ class FIDService(rpyc.Service):
                 :rtype: None
 
                 """
-                self.q.put((fake_images, lbda, dataset_str))       # pushes stuff to the queue
+                q_item = {
+                    'fake_images': fake_images,
+                    'dataset_str': dataset_str,
+                    'lbda': lbda,
+                }
+                self.q.put(q_item)
 
         # Singleton to return only one instance
         instance = None

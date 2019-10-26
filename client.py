@@ -29,6 +29,20 @@ class FIDClient(object):
         """
         self.fid.add_dataset(dataset_str, path)
 
+    def post_with_images(self, fake_images, real_images, lbda):
+        """ Post fake + real images to the FID-server and set lbda to be the callback.
+
+        :param fake_images: the fake numpy images with channels being the last dimension.
+        :param real_images: the true numpy images with channels being the last dimension.
+        :param lbda: the function that takes fid_score as ONLY param, eg: lambda x: print("fid is ", x).
+        :returns: nothing, but executes the callback lbda asynchronously.
+        :rtype: None
+
+        """
+        assert fake_images.shape[-1] == 3 or fake_images.shape[-1] == 1, "[fake] channel dim needs to be at dim=-1"
+        assert real_images.shape[-1] == 3 or real_images.shape[-1] == 1, "[real] channel dim needs to be at dim=-1"
+        self.fid.post_with_images(fake_images, real_images, lbda)
+
     def post(self, fake_images, lbda, dataset_str):
         """ Post fake_images to the FID-server and set lbda to be the callback.
 

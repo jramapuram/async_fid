@@ -8,5 +8,9 @@ echo "using root ${ROOT_DIR}"
 CMD=$1
 echo "executing $CMD "
 
+# run on the following GPU
+GPU=${2:-0}
+echo "using GPU: $GPU"
+
 # execute it in docker
-nvidia-docker run -p 8000:8000 -u $(id -u):$(id -g) --ipc=host -v $HOME/datasets:/datasets -v ${ROOT_DIR}:/workspace -it jramapuram/fid-tensorflow:1.14.0-gpu-py3 $CMD
+nvidia-docker run -p 8000:8000 -u $(id -u):$(id -g) --ipc=host -v $HOME/datasets:/datasets -v ${ROOT_DIR}:/workspace  -e NVIDIA_VISIBLE_DEVICES=$GPU -it jramapuram/fid-tensorflow:1.14.0-gpu-py3 $CMD
